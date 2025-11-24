@@ -11,6 +11,51 @@ from libs import user_memory as um
 llm_client = LLMClient.from_env()
 
 
+def deep_merge(a: dict, b: dict) -> dict:
+    """
+    Recursively merge dict b into dict a (a wins type conflicts, b overrides values).
+    Returns a new dict.
+    """
+    import copy
+    result = copy.deepcopy(a)
+    for k, v in b.items():
+        if k in result and isinstance(result[k], dict) and isinstance(v, dict):
+            result[k] = deep_merge(result[k], v)
+        else:
+            result[k] = v
+    return result
+
+
+def apply_user_policy_overlay(
+    base_policy: Dict[str, Any],
+    user_id: Optional[str],
+) -> Dict[str, Any]:
+    """
+    Load user overlay (if any) and merge into base policy.
+    """
+    if not user_id:
+        return base_policy
+
+    overlay = db.get_active_user_policy_overlay(user_id)
+    if not overlay:
+        return base_policy
+
+    merged = dict(base_policy)
+    # base_policy is a DB row; our Policy schema uses JSON columns for routing/tool_use
+    routing = merged.get("routing", {})
+    tool_use = merged.get("tool_use", {})
+
+    routing_ov = overlay.get("routing_override") or {}
+    tool_use_ov = overlay.get("tool_use_override") or {}
+
+    routing = deep_merge(routing, routing_ov)
+    tool_use = deep_merge(tool_use, tool_use_ov)
+
+    merged["routing"] = routing
+    merged["tool_use"] = tool_use
+    return merged
+
+
 def build_user_context_block(memories: List[Dict[str, Any]], user_profile: Optional[Dict[str, Any]]) -> str:
     """
     Format user memories + profile into a concise system-usable text block.
@@ -137,8 +182,11 @@ def handle_task(task: Dict[str, Any]) -> str:
 
     user_context_block = build_user_context_block(user_memories, user_profile)
 
+    # ----- apply user policy overlay -----
+    effective_policy = apply_user_policy_overlay(policy, user_id)
+
     # ----- reasoning -----
-    output_text, metadata = reasoning_engine(task, policy, self_prompt, user_context_block)
+    output_text, metadata = reasoning_engine(task, effective_policy, self_prompt, user_context_block)
 
     # ----- trace logging -----
     if policy.get("id") and self_prompt.get("id"):

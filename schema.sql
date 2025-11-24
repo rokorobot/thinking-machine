@@ -1,6 +1,15 @@
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
+-- Users Table (for long-term memory & preferences)
+CREATE TABLE IF NOT EXISTS users (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    external_id TEXT UNIQUE NOT NULL, -- The ID from the upstream system (e.g. Slack ID)
+    profile JSONB DEFAULT '{}'::jsonb, -- { "preferences": { "tone": "direct" } }
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
 -- 1. The Genome (Policies & Prompts)
 CREATE TABLE self_prompts (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -19,6 +28,25 @@ CREATE TABLE policy_versions (
     is_active BOOLEAN DEFAULT FALSE
 );
 
+-- User-Specific Policy Overlays
+CREATE TABLE IF NOT EXISTS user_policies (
+  id                BIGSERIAL PRIMARY KEY,
+  user_id           UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  base_policy_id    UUID NOT NULL REFERENCES policy_versions(id),
+  routing_override  JSONB NOT NULL DEFAULT '{}'::jsonb,
+  tool_use_override JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  is_active         BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_policies_user_id
+  ON user_policies(user_id);
+
+CREATE INDEX IF NOT EXISTS idx_user_policies_user_active
+  ON user_policies(user_id)
+  WHERE is_active = TRUE;
+
 -- 2. Experience (Traces & Feedback)
 CREATE TABLE traces (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -28,6 +56,7 @@ CREATE TABLE traces (
     self_prompt_id UUID REFERENCES self_prompts(id),
     metadata JSONB, -- { "hallucination_flag": true, "latency_ms": 400 }
     user_feedback JSONB, -- { "thumbs_down": true, "comment": "Too verbose" }
+    user_id UUID REFERENCES users(id), -- Link trace to user
     created_at TIMESTAMP DEFAULT NOW()
 );
 
