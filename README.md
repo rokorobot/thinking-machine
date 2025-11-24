@@ -90,6 +90,22 @@ curl -X POST http://localhost:8080/task \
     "user_external_id": "robert_123",
     "memory_note": "I am working on the Thinking Machine project."
   }'
+```
+
+## User-Specific Policy Overlays
+
+The system now adapts its behavior to individual users by inferring their preferences from interaction traces.
+
+### How it works
+1.  **Trace Analysis**: The **Meta Agent** periodically analyzes recent traces for each user.
+2.  **Preference Inference**: It infers preferences like `tone` (direct vs gentle), `detail_level` (concise vs detailed), and `safety_bias`.
+3.  **Policy Overlay**: These preferences are converted into a **Policy Overlay** (stored in `user_policies`) that overrides specific routing and tool-use rules in the global policy.
+4.  **Runtime Application**: When the Core Agent handles a task, it merges the active global policy with the user's specific overlay.
+
+### Example Preferences
+*   **Tone**: `direct` (high directness) vs `gentle` (low directness)
+*   **Detail**: `concise` (short replies) vs `detailed` (long replies)
+*   **Safety**: `strict` (extra checks) vs `relaxed`
 ## Mission Control Dashboard
 
 The **Monitor** service (`http://localhost:8501`) has been upgraded to a full "Mission Control" interface with 5 tabs reflecting the system's core capabilities:
